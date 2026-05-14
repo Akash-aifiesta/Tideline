@@ -16,7 +16,11 @@ const STREAM_EXPIRY_MS = 30 * 60 * 1000 // 30 minutes
 
 const app = new Hono()
 
-app.use('*', cors({ origin: process.env.CORS_ORIGIN ?? '*' }))
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'x-request-id'],
+}))
 app.use('*', honoLogger())
 
 // Inject a request ID so logs can be correlated
