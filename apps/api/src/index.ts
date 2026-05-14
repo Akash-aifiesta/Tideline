@@ -10,7 +10,7 @@ import { resumeRoute } from './routes/resume.js'
 import { getExpiredStreams, deleteStream } from './services/stream-manager.js'
 
 const INSTANCE_ID = process.env.RAILWAY_REPLICA_ID ?? process.env.INSTANCE_ID ?? 'local'
-const PORT = Number(process.env.PORT ?? 3001)
+const PORT = Number(process.env.PORT ?? 3001)  // Railway injects PORT automatically
 const CLEANUP_INTERVAL_MS = 60_000       // run every 60 s
 const STREAM_EXPIRY_MS = 30 * 60 * 1000 // 30 minutes
 
