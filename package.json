@@ -1,11 +1,10 @@
 {
-  "name": "resumable-streaming-chat",
+  "name": "tideline",
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev:api": "pnpm --filter api dev",
-    "dev:client": "pnpm --filter client dev",
-    "build": "pnpm --filter api build && pnpm --filter client build",
+    "dev": "pnpm --filter api dev",
+    "build": "pnpm --filter api build",
     "docker:up": "docker-compose up --build",
     "docker:redis": "docker-compose up redis-manager redis-streams",
     "docker:down": "docker-compose down"
