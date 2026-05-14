@@ -51,11 +51,13 @@ function startCleanup(): void {
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  await connectAll()
-  startCleanup()
+  // Start server immediately so healthcheck passes
   serve({ fetch: app.fetch, port: PORT }, () => {
     logger.info({ port: PORT, instance: INSTANCE_ID }, 'API server started')
   })
+  // Connect Redis after — ioredis will retry automatically on failure
+  connectAll().catch((err) => logger.error({ err }, 'Redis initial connect failed — retrying'))
+  startCleanup()
 }
 
 main().catch((err) => {
