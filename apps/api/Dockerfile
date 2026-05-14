@@ -7,7 +7,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api/package.json ./apps/api/
 
 # Install only api deps
-RUN pnpm install --filter api --frozen-lockfile
+RUN pnpm install --filter api --no-frozen-lockfile
 
 # Copy source and build
 COPY apps/api/tsconfig.json ./apps/api/
