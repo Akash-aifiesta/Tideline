@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+apps/api/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+/tmp/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# pnpm
+.pnpm-store/

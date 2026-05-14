@@ -1,0 +1,16 @@
+{
+  "name": "resumable-streaming-chat",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:api": "pnpm --filter api dev",
+    "dev:client": "pnpm --filter client dev",
+    "build": "pnpm --filter api build && pnpm --filter client build",
+    "docker:up": "docker-compose up --build",
+    "docker:redis": "docker-compose up redis-manager redis-streams",
+    "docker:down": "docker-compose down"
+  },
+  "pnpm": {
+    "allowedBuildScripts": ["esbuild"]
+  }
+}
