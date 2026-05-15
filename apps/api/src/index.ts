@@ -23,12 +23,23 @@ app.use('*', cors({
 }))
 app.use('*', honoLogger())
 
-// Inject a request ID so logs can be correlated
+// Inject a request ID and log request timing
 app.use('*', async (c, next) => {
-  c.req.raw.headers
+  const t0 = performance.now()
   const id = c.req.header('x-request-id') ?? uuid()
   c.res.headers.set('x-request-id', id)
   await next()
+  const durationMs = Math.round(performance.now() - t0)
+  // SSE routes return 200 immediately and stream in the background;
+  // durationMs here is time-to-first-byte, not total stream lifetime.
+  logger.info({
+    method: c.req.method,
+    path: c.req.path,
+    status: c.res.status,
+    durationMs,
+    requestId: id,
+    instance: INSTANCE_ID,
+  }, 'request')
 })
 
 app.get('/health', (c) =>

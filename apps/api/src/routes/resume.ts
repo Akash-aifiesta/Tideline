@@ -27,6 +27,7 @@ resumeRoute.post('/', async (c) => {
   const meta = await getStreamMeta(chatId)
   if (!meta) return c.json({ error: 'stream not found' }, 404)
 
+  const requestT0 = performance.now()
   const clientId = uuid()
   logger.info({ requestId, chatId, clientId, lastSequence, instance: INSTANCE_ID }, 'POST /resume')
 
@@ -34,15 +35,17 @@ resumeRoute.post('/', async (c) => {
 
   return streamSSE(c, async (stream) => {
     const ac = new AbortController()
+    let tokensDelivered = 0
 
     stream.onAbort(() => {
-      logger.info({ chatId, clientId }, 'SSE client disconnected on resume')
+      const lifetimeMs = Math.round(performance.now() - requestT0)
+      logger.info({ chatId, clientId, tokensDelivered, lifetimeMs }, 'SSE client disconnected on resume')
       ac.abort()
       removeConnection(chatId, clientId).catch(() => {})
     })
 
     // ── Phase 1: replay missed chunks via XRANGE ──────────────────────────
-    // XRANGE is a snapshot read — safe to do without holding a blocking connection.
+    const replayT0 = performance.now()
     const { chunks, lastId } = await readChunksSince(chatId, lastSequence)
     let replayCount = 0
     for (const chunk of chunks) {
@@ -51,22 +54,21 @@ resumeRoute.post('/', async (c) => {
         data: JSON.stringify({ seq: chunk.seq, content: chunk.content }),
       })
       replayCount++
+      tokensDelivered++
     }
     await stream.writeSSE({ event: 'replay_complete', data: '{}' })
-    logger.info({ chatId, replayCount, fromSeq: lastSequence }, 'replay complete')
+    const replayMs = Math.round(performance.now() - replayT0)
+    logger.info({ chatId, replayCount, fromSeq: lastSequence, replayMs }, 'replay complete')
 
     // ── Phase 2: live continuation via XREAD BLOCK ────────────────────────
-    // If stream already finished, XRANGE will have included the 'done' entry.
-    // In that case meta.status is 'completed' by the time we check.
     if (meta.status === 'completed') {
       await stream.writeSSE({ event: 'done', data: '{}' })
       removeConnection(chatId, clientId).catch(() => {})
       return
     }
 
-    // Resume from the last XRANGE entry ID (or '0' if nothing was in the stream yet).
-    // XREAD BLOCK will deliver any entries appended AFTER lastId.
     const liveFromId = lastId !== '0' ? lastId : '0'
+    let firstLiveTokenMs: number | null = null
 
     for await (const entry of readStreamLive(chatId, liveFromId, ac.signal)) {
       if (entry.type === 'ping') {
@@ -77,12 +79,19 @@ resumeRoute.post('/', async (c) => {
         await stream.writeSSE({ event: 'done', data: '{}' })
         break
       }
+      if (firstLiveTokenMs === null) {
+        firstLiveTokenMs = Math.round(performance.now() - requestT0)
+        logger.info({ chatId, clientId, firstLiveTokenMs }, 'time-to-first-live-token')
+      }
+      tokensDelivered++
       await stream.writeSSE({
         event: 'token',
         data: JSON.stringify({ seq: entry.seq, content: entry.content }),
       })
     }
 
+    const lifetimeMs = Math.round(performance.now() - requestT0)
+    logger.info({ chatId, clientId, tokensDelivered, replayCount, lifetimeMs }, 'resume SSE stream closed')
     removeConnection(chatId, clientId).catch(() => {})
   })
 })

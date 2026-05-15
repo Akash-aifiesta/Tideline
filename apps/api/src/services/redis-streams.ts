@@ -1,16 +1,20 @@
 import { redisStreamsClient, createReader } from '../lib/redis.js'
+import { logger } from '../lib/logger.js'
 
 const streamKey = (chatId: string) => `stream:chunks:${chatId}`
 
 // ── Write ops ────────────────────────────────────────────────────────────────
 
 export async function appendChunk(chatId: string, seq: number, content: string): Promise<void> {
+  const t0 = performance.now()
   await redisStreamsClient.xadd(
     streamKey(chatId), '*',
     'seq', String(seq),
     'type', 'token',
     'content', content,
   )
+  const xaddMs = Math.round(performance.now() - t0)
+  logger.debug({ chatId, seq, xaddMs }, 'xadd')
 }
 
 export async function appendDone(chatId: string): Promise<void> {
@@ -85,6 +89,7 @@ export async function* readStreamLive(
   try {
     while (!signal.aborted) {
       let result: [string, [string, string[]][]][] | null
+      const xreadT0 = performance.now()
       try {
         // Cast needed because ioredis types for xread with BLOCK are loosely typed
         result = (await reader.xread(
@@ -96,13 +101,16 @@ export async function* readStreamLive(
         break
       }
 
+      const xreadMs = Math.round(performance.now() - xreadT0)
       if (!result) {
         // BLOCK timeout — emit heartbeat ping so SSE connection stays alive
+        logger.debug({ chatId, xreadMs, outcome: 'timeout' }, 'xread block')
         yield { id: lastId, type: 'ping' }
         continue
       }
 
       const [, entries] = result[0]
+      logger.debug({ chatId, xreadMs, entries: entries.length, outcome: 'entries' }, 'xread block')
       for (const [id, fields] of entries) {
         lastId = id
         const obj = toObject(fields)

@@ -15,17 +15,19 @@ const INSTANCE_ID = process.env.RAILWAY_REPLICA_ID ?? process.env.INSTANCE_ID ??
  */
 async function startGeneration(chatId: string, message: string): Promise<void> {
   let seq = 0
+  const t0 = performance.now()
   try {
     for await (const token of generateTokens(message)) {
       seq++
       await appendChunk(chatId, seq, token)
       await updateSequence(chatId, seq)
-      logger.info({ chatId, seq, token, instance: INSTANCE_ID }, 'chunk generated')
+      logger.debug({ chatId, seq, instance: INSTANCE_ID }, 'chunk written')
     }
+    const genMs = Math.round(performance.now() - t0)
     await appendDone(chatId)
     await setStreamExpiry(chatId)
     await setStatus(chatId, 'completed')
-    logger.info({ chatId, totalSeq: seq }, 'stream generation complete')
+    logger.info({ chatId, totalTokens: seq, genMs, tokensPerSec: Math.round(seq / (genMs / 1000)) }, 'generation complete')
   } catch (err) {
     logger.error({ chatId, err }, 'generation failed')
     await setStatus(chatId, 'failed').catch(() => {})
@@ -51,6 +53,7 @@ streamRoute.post('/', async (c) => {
 
   logger.info({ requestId, chatId, clientId, instance: INSTANCE_ID }, 'POST /stream')
 
+  const requestT0 = performance.now()
   await createStream(chatId, INSTANCE_ID)
   await trackConnection(chatId, clientId)
 
@@ -60,9 +63,12 @@ streamRoute.post('/', async (c) => {
 
   return streamSSE(c, async (stream) => {
     const ac = new AbortController()
+    let firstTokenMs: number | null = null
+    let tokensDelivered = 0
 
     stream.onAbort(() => {
-      logger.info({ chatId, clientId }, 'SSE client disconnected (generation continues)')
+      const lifetimeMs = Math.round(performance.now() - requestT0)
+      logger.info({ chatId, clientId, tokensDelivered, lifetimeMs }, 'SSE client disconnected (generation continues)')
       ac.abort()
       removeConnection(chatId, clientId).catch(() => {})
     })
@@ -81,12 +87,19 @@ streamRoute.post('/', async (c) => {
         await stream.writeSSE({ event: 'done', data: '{}' })
         break
       }
+      if (firstTokenMs === null) {
+        firstTokenMs = Math.round(performance.now() - requestT0)
+        logger.info({ chatId, clientId, firstTokenMs }, 'time-to-first-token')
+      }
+      tokensDelivered++
       await stream.writeSSE({
         event: 'token',
         data: JSON.stringify({ seq: entry.seq, content: entry.content }),
       })
     }
 
+    const lifetimeMs = Math.round(performance.now() - requestT0)
+    logger.info({ chatId, clientId, tokensDelivered, lifetimeMs, firstTokenMs }, 'SSE stream closed')
     removeConnection(chatId, clientId).catch(() => {})
   })
 })
